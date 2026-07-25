@@ -1,0 +1,12 @@
+# Cloudflare Pages 配置
+# 这是 Cloudflare Pages 项目的标准配置
+name = "vocab-master"
+compatibility_date = "2024-01-01"
+pages_build_output_dir = "dist"
+
+[build]
+command = "npm run build"
+
+[vars]
+VITE_SUPABASE_URL = "https://uowcxcoxqbnxyghit.supabase.co"
+VITE_SUPABASE_ANON_KEY = "sb_publishable_WmN4C_DCLoU14NHI1wd1GA_FNMbjO3c"
