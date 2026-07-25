@@ -5,30 +5,7 @@
  */
 
 import { handleCorrect, handleWrong, FORGETTING_CURVE_DATA, SPACED_REPETITION_EFFECT, BOX_DESCRIPTIONS, BOX_COLORS } from './lib/spaced-repetition';
-
-// 内置 20 个示例单词
-const BUILT_IN_WORDS = [
-  { id: 'w1', word: 'abandon', phonetic: 'əˈbændən', definition: 'v. 放弃，抛弃', example: 'He abandoned his career.', example_translation: '他放弃了他的事业。', tags: '四级,高频' },
-  { id: 'w2', word: 'benefit', phonetic: 'ˈbenɪfɪt', definition: 'n. 利益，好处 v. 获益', example: 'Exercise benefits your health.', example_translation: '锻炼有益于你的健康。', tags: '四级,高频' },
-  { id: 'w3', word: 'curious', phonetic: 'ˈkjʊəriəs', definition: 'adj. 好奇的，奇特的', example: 'Children are naturally curious.', example_translation: '孩子们天生好奇。', tags: '四级,高频' },
-  { id: 'w4', word: 'determine', phonetic: 'dɪˈtɜːmɪn', definition: 'v. 决定，决心', example: 'She determined to win.', example_translation: '她决心要赢。', tags: '四级,高频' },
-  { id: 'w5', word: 'essential', phonetic: 'ɪˈsenʃl', definition: 'adj. 必要的，本质的', example: 'Water is essential for life.', example_translation: '水对生命是必不可少的。', tags: '四级,高频' },
-  { id: 'w6', word: 'frequent', phonetic: 'ˈfriːkwənt', definition: 'adj. 频繁的，常见的', example: 'He is a frequent visitor.', example_translation: '他是常客。', tags: '四级,高频' },
-  { id: 'w7', word: 'generate', phonetic: 'ˈdʒenəreɪt', definition: 'v. 产生，发生', example: 'Wind turbines generate electricity.', example_translation: '风力涡轮机发电。', tags: '四级,高频' },
-  { id: 'w8', word: 'horizon', phonetic: 'həˈraɪzn', definition: 'n. 地平线，眼界', example: 'The sun set below the horizon.', example_translation: '太阳沉入地平线以下。', tags: '四级,高频' },
-  { id: 'w9', word: 'imagine', phonetic: 'ɪˈmædʒɪn', definition: 'v. 想象，设想', example: 'Imagine living on Mars.', example_translation: '想象一下住在火星上。', tags: '四级,高频' },
-  { id: 'w10', word: 'journey', phonetic: 'ˈdʒɜːni', definition: 'n. 旅程，旅行', example: 'Life is a journey.', example_translation: '生命是一场旅程。', tags: '四级,高频' },
-  { id: 'w11', word: 'knowledge', phonetic: 'ˈnɒlɪdʒ', definition: 'n. 知识，学问', example: 'Knowledge is power.', example_translation: '知识就是力量。', tags: '四级,高频' },
-  { id: 'w12', word: 'literature', phonetic: 'ˈlɪtərətʃə', definition: 'n. 文学，文献', example: 'She studies English literature.', example_translation: '她研究英国文学。', tags: '四级,高频' },
-  { id: 'w13', word: 'maintain', phonetic: 'meɪnˈteɪn', definition: 'v. 维持，保养', example: 'Maintain a healthy diet.', example_translation: '保持健康的饮食。', tags: '四级,高频' },
-  { id: 'w14', word: 'necessary', phonetic: 'ˈnesəsəri', definition: 'adj. 必要的，必需的', example: 'Sleep is necessary for health.', example_translation: '睡眠对健康是必要的。', tags: '四级,高频' },
-  { id: 'w15', word: 'opportunity', phonetic: 'ˌɒpəˈtjuːnəti', definition: 'n. 机会，时机', example: 'Don\'t miss this opportunity.', example_translation: '不要错过这个机会。', tags: '四级,高频' },
-  { id: 'w16', word: 'particular', phonetic: 'pəˈtɪkjələ', definition: 'adj. 特别的，特定的', example: 'Is there any particular color?', example_translation: '有什么特别的颜色吗？', tags: '四级,高频' },
-  { id: 'w17', word: 'quality', phonetic: 'ˈkwɒləti', definition: 'n. 质量，品质', example: 'Quality matters more than quantity.', example_translation: '质量比数量更重要。', tags: '四级,高频' },
-  { id: 'w18', word: 'recognize', phonetic: 'ˈrekəɡnaɪz', definition: 'v. 认出，识别', example: 'I didn\'t recognize you.', example_translation: '我没认出你。', tags: '四级,高频' },
-  { id: 'w19', word: 'suggest', phonetic: 'səˈdʒest', definition: 'v. 建议，暗示', example: 'I suggest taking a break.', example_translation: '我建议休息一下。', tags: '四级,高频' },
-  { id: 'w20', word: 'typical', phonetic: 'ˈtɪpɪkl', definition: 'adj. 典型的，特有的', example: 'It\'s a typical English breakfast.', example_translation: '这是典型的英式早餐。', tags: '四级,高频' },
-];
+import BUILT_IN_WORDS from './lib/built-in-words';
 
 // localStorage 操作工具
 const STORAGE_PREFIX = 'vocab_';
