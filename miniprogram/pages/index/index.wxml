@@ -1,0 +1,5 @@
+<!--index.wxml-->
+<view class="container">
+  <!-- web-view 嵌入单词背诵网页应用 -->
+  <web-view src="{{webUrl}}"></web-view>
+</view>
