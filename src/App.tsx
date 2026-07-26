@@ -52,11 +52,6 @@ function AppContent() {
     return <LoginPage />;
   }
 
-  // 待审核 → 返回登录页（显示等待批准）
-  if (student.status === 'pending') {
-    return <LoginPage />;
-  }
-
   if (isMobile) {
     return (
       <div className="flex h-screen w-screen flex-col" style={{ backgroundColor: 'var(--td-bg-color-page)' }}>
