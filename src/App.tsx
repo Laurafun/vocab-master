@@ -34,6 +34,11 @@ function AppContent() {
   const isMobile = useIsMobile();
   const { student, loading } = useStudent();
 
+  // 老师后台 → 不需要学生登录，独立入口
+  if (window.location.hash.includes('#/teacher')) {
+    return <TeacherDashboard />;
+  }
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center" style={{ backgroundColor: '#f5f5f5' }}>
