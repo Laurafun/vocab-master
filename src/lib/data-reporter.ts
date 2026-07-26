@@ -82,7 +82,8 @@ export async function registerStudent(studentId: string, studentName: string): P
   if (existing) {
     try {
       const data = JSON.parse(existing.content);
-      return data.status || 'approved'; // 老学生默认通过
+      // 返回已有的状态（不自动批准）
+      return data.status || 'pending';
     } catch {}
   }
 
@@ -98,7 +99,16 @@ export async function registerStudent(studentId: string, studentName: string): P
     streak: 0,
   };
 
-  await writeToFile(filePath, JSON.stringify(data, null, 2));
+  // 尝试写入，最多重试 3 次
+  let success = false;
+  for (let i = 0; i < 3; i++) {
+    success = await writeToFile(filePath, JSON.stringify(data, null, 2));
+    if (success) break;
+    await new Promise(r => setTimeout(r, 1000)); // 等 1 秒重试
+  }
+
+  // 无论是否写入成功，都返回 pending（学生看到等待页面）
+  // 如果写入失败，下次打开会重试
   return 'pending';
 }
 
@@ -108,7 +118,7 @@ export async function checkStudentStatus(studentId: string): Promise<'pending' |
   if (!result) return 'unknown';
   try {
     const data = JSON.parse(result.content);
-    return data.status || 'approved';
+    return data.status || 'pending';
   } catch {
     return 'unknown';
   }
