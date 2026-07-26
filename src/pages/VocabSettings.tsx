@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Save, Sliders, Info, LogOut } from 'lucide-react';
-import { settingsApi } from '../api';
+import { Save, Sliders, Info, LogOut, FileText, Copy, CheckCircle2 } from 'lucide-react';
+import { settingsApi, statsApi } from '../api';
 import type { AppSettings } from '../types';
 import { useStudent } from '../contexts/StudentContext';
 
@@ -104,7 +104,91 @@ export function VocabSettings() {
             <p>记忆算法: Leitner System + 艾宾浩斯遗忘曲线</p>
           </div>
         </div>
+
+        {/* 导出学习报告 */}
+        <div className="rounded-xl border p-5" style={{ backgroundColor: 'var(--td-bg-color-container)', borderColor: 'var(--td-component-stroke)' }}>
+          <h2 className="mb-4 flex items-center gap-2 text-base font-semibold" style={{ color: 'var(--td-text-color-primary)' }}>
+            <FileText size={18} />导出学习报告
+          </h2>
+          <p className="mb-3 text-sm" style={{ color: 'var(--td-text-color-secondary)' }}>
+            复制学习报告发送给老师
+          </p>
+          <ExportReport studentId={student!.id} studentName={student!.name} />
+        </div>
       </div>
+    </div>
+  );
+}
+
+function ExportReport({ studentId, studentName }: { studentId: string; studentName: string }) {
+  const [report, setReport] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const generateReport = async () => {
+    setLoading(true);
+    try {
+      const stats = await statsApi.get(studentId);
+      const curve = await statsApi.getCurve(studentId);
+      const today = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
+
+      let rpt = `📊 学习报告 - ${studentName}\n━━━━━━━━━━━━━━━━\n📅 ${today}\n\n`;
+      rpt += `📚 总单词量: ${stats.total} 个\n`;
+      rpt += `🆕 新词: ${stats.newWords}\n`;
+      rpt += `📖 学习中: ${stats.learning}\n`;
+      rpt += `✅ 已掌握: ${stats.mastered}\n`;
+      rpt += `⏰ 今日待复习: ${stats.dueToday}\n\n`;
+      rpt += `📈 今日统计:\n`;
+      rpt += `  总复习: ${stats.todayStats.total} 次\n`;
+      rpt += `  答对: ${stats.todayStats.correct} 次\n`;
+      rpt += `  答错: ${stats.todayStats.wrong} 次\n`;
+      if (stats.todayStats.total > 0) {
+        rpt += `  正确率: ${Math.round(stats.todayStats.correct / stats.todayStats.total * 100)}%\n`;
+      }
+      rpt += `\n🔥 连续打卡: ${stats.streak} 天\n`;
+      if (curve) {
+        rpt += `\n🗂️ 记忆箱分布:\n`;
+        curve.boxDistribution.forEach((b: any) => {
+          rpt += `  第${b.level}箱: ${b.count} 个 | ${b.description}\n`;
+        });
+      }
+      setReport(rpt);
+    } catch (e) {
+      setReport(`❌ 生成失败: ${e}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copyReport = async () => {
+    if (!report) return;
+    await navigator.clipboard.writeText(report);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div>
+      <div className="flex gap-2">
+        <button onClick={generateReport} disabled={loading}
+          className="flex items-center gap-1 rounded-lg px-4 py-2 text-sm font-medium text-white"
+          style={{ background: 'linear-gradient(135deg, #3b82f6, #6366f1)' }}>
+          <FileText size={16} />{loading ? '生成中...' : '生成报告'}
+        </button>
+        {report && (
+          <button onClick={copyReport}
+            className="flex items-center gap-1 rounded-lg border px-4 py-2 text-sm font-medium"
+            style={{ borderColor: '#22c55e', color: '#22c55e' }}>
+            {copied ? <CheckCircle2 size={16} /> : <Copy size={16} />}
+            {copied ? '已复制' : '复制'}
+          </button>
+        )}
+      </div>
+      {report && (
+        <div className="mt-3 rounded-lg bg-gray-800 p-3 text-xs text-green-300 font-mono whitespace-pre-line">
+          {report}
+        </div>
+      )}
     </div>
   );
 }

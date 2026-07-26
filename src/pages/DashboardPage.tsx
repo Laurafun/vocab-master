@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, BookOpen, CheckCircle2, Flame, Target, Calendar } from 'lucide-react';
+import { TrendingUp, BookOpen, CheckCircle2, Flame, Target, Calendar, FileText, Copy, CheckCircle2 as CheckCircle2Icon } from 'lucide-react';
 import { statsApi } from '../api';
 import type { WordStats, CurveData } from '../types';
 import { useStudent } from '../contexts/StudentContext';
@@ -190,6 +190,57 @@ export function DashboardPage() {
           <SpacedRepetitionChart data={curveData.spacedRepetitionEffect} />
         </div>
       )}
+        {/* 导出报告 */}
+        <div className="rounded-xl border p-5" style={{ backgroundColor: 'var(--td-bg-color-container)', borderColor: 'var(--td-component-stroke)' }}>
+          <h2 className="mb-3 flex items-center gap-2 text-base font-semibold" style={{ color: 'var(--td-text-color-primary)' }}>
+            <FileText size={18} />导出学习报告
+          </h2>
+          <DashboardExport studentId={student.id} studentName={student.name} stats={stats} curveData={curveData} />
+        </div>
+    </div>
+  );
+}
+
+function DashboardExport({ studentId, studentName, stats, curveData }: { studentId: string; studentName: string; stats: any; curveData: any }) {
+  const [copied, setCopied] = useState(false);
+
+  const generateReport = () => {
+    const today = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
+    let rpt = `📊 学习报告 - ${studentName}\n━━━━━━━━━━━━━━━━\n📅 ${today}\n\n`;
+    rpt += `📚 总单词量: ${stats.total} 个\n`;
+    rpt += `🆕 新词: ${stats.new}\n`;
+    rpt += `📖 学习中: ${stats.learning}\n`;
+    rpt += `✅ 已掌握: ${stats.mastered}\n`;
+    rpt += `⏰ 今日待复习: ${stats.dueToday}\n\n`;
+    rpt += `📈 今日统计:\n`;
+    rpt += `  总复习: ${stats.todayStats.total} 次\n`;
+    rpt += `  答对: ${stats.todayStats.correct} 次\n`;
+    rpt += `  答错: ${stats.todayStats.wrong} 次\n`;
+    if (stats.todayStats.total > 0) rpt += `  正确率: ${Math.round(stats.todayStats.correct / stats.todayStats.total * 100)}%\n`;
+    rpt += `\n🔥 连续打卡: ${stats.streak} 天\n`;
+    if (curveData?.boxDistribution) {
+      rpt += `\n🗂️ 记忆箱分布:\n`;
+      curveData.boxDistribution.forEach((b: any) => { rpt += `  第${b.level}箱: ${b.count} 个\n`; });
+    }
+    return rpt;
+  };
+
+  const copyReport = async () => {
+    const rpt = generateReport();
+    await navigator.clipboard.writeText(rpt);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="flex gap-2">
+      <button onClick={copyReport}
+        className="flex items-center gap-1 rounded-lg px-4 py-2 text-sm font-medium text-white"
+        style={{ background: 'linear-gradient(135deg, #3b82f6, #6366f1)' }}>
+        {copied ? <CheckCircle2Icon size={16} /> : <Copy size={16} />}
+        {copied ? '已复制' : '复制学习报告'}
+      </button>
+      {copied && <span className="flex items-center text-xs text-green-600">✅ 已复制，可发送给老师</span>}
     </div>
   );
 }
