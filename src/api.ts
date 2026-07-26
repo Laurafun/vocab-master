@@ -1,11 +1,11 @@
 /**
- * 本地存储方案 - 完全离线，不需要 Supabase
- * 每个学生在浏览器本地保存自己的进度
- * 单词列表内置在代码里
+ * 本地存储方案 + GitHub 数据上报
+ * 学生数据存在本地，同时上报到老师后台
  */
 
 import { handleCorrect, handleWrong, FORGETTING_CURVE_DATA, SPACED_REPETITION_EFFECT, BOX_DESCRIPTIONS, BOX_COLORS } from './lib/spaced-repetition';
 import BUILT_IN_WORDS from './lib/built-in-words';
+import { reportProgress } from './lib/data-reporter';
 
 // localStorage 操作工具
 const STORAGE_PREFIX = 'vocab_';
@@ -167,6 +167,22 @@ export const studyApi = {
     const records = getItem('records_' + studentId) || [];
     records.push({ word_id: wordId, result, box_level_before: levelBefore, box_level_after: handled.newLevel, reviewed_at: new Date().toISOString() });
     setItem('records_' + studentId, records);
+
+    // 自动上报进度到老师后台（异步，不阻塞用户）
+    const student = getItem('student');
+    if (student) {
+      const allWords = [...(getItem('custom_words') || []), ...BUILT_IN_WORDS];
+      const stats = {
+        total: allWords.length,
+        newWords: Object.values(progress).filter((p: any) => !p || p.status === 'new').length,
+        learning: Object.values(progress).filter((p: any) => p && p.status === 'learning').length,
+        mastered: Object.values(progress).filter((p: any) => p && p.status === 'mastered').length,
+        dueToday: 0,
+        todayStats: { total: 0, correct: 0, wrong: 0 },
+        streak: 0,
+      };
+      reportProgress(student.id, student.name, stats).catch(() => {});
+    }
 
     return { success: true, wordId, result, levelBefore, levelAfter: handled.newLevel, nextReview: handled.nextReview, status: handled.status, boxDescription: BOX_DESCRIPTIONS[handled.newLevel], boxColor: BOX_COLORS[handled.newLevel] };
   },

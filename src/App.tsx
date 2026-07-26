@@ -12,6 +12,7 @@ import { WordManagePage } from './pages/WordManagePage';
 import { AIChatPage } from './pages/AIChatPage';
 import { VocabSettings } from './pages/VocabSettings';
 import { LoginPage } from './pages/LoginPage';
+import { TeacherDashboard } from './pages/TeacherDashboard';
 import { APP_CONFIG } from './config';
 
 document.title = APP_CONFIG.name;
@@ -57,6 +58,7 @@ function AppContent() {
             <Route path="/words" element={<WordManagePage />} />
             <Route path="/chat" element={<AIChatPage />} />
             <Route path="/settings" element={<VocabSettings />} />
+            <Route path="/teacher" element={<TeacherDashboard />} />
           </Routes>
         </main>
         <AppNav theme={theme} onToggleTheme={toggleTheme} variant="bottom" />
@@ -74,7 +76,8 @@ function AppContent() {
           <Route path="/words" element={<WordManagePage />} />
           <Route path="/chat" element={<AIChatPage />} />
           <Route path="/settings" element={<VocabSettings />} />
-        </Routes>
+            <Route path="/teacher" element={<TeacherDashboard />} />
+          </Routes>
       </main>
     </div>
   );
