@@ -19,14 +19,7 @@ interface StudentContextType {
 const StudentContext = createContext<StudentContextType | undefined>(undefined);
 
 const STATUS_KEY = 'vocab_student_status';
-
-function getLocalStatus(): string | null {
-  try { return localStorage.getItem(STATUS_KEY); } catch { return null; }
-}
-
-function setLocalStatus(status: string) {
-  try { localStorage.setItem(STATUS_KEY, status); } catch {}
-}
+const STATUS_TIME_KEY = 'vocab_student_status_time';
 
 export function StudentProvider({ children }: { children: ReactNode }) {
   const [student, setStudent] = useState<Student | null>(null);
@@ -36,10 +29,9 @@ export function StudentProvider({ children }: { children: ReactNode }) {
     const current = studentApi.getCurrent();
     if (!current) { setLoading(false); return; }
 
-    // 先读本地状态（立即响应，不等网络）
-    const localStatus = getLocalStatus();
+    const localStatus = localStorage.getItem(STATUS_KEY);
 
-    // 如果本地是 pending，先显示 pending，然后异步检查云端
+    // 被拒绝 → 直接退出
     if (localStatus === 'rejected') {
       studentApi.logout();
       setStudent(null);
@@ -47,50 +39,57 @@ export function StudentProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // 先用本地状态显示（pending 或 approved）
-    setStudent({ ...current, status: (localStatus as any) || 'pending' });
+    // 已批准（本地缓存）→ 先放行，再异步验证
+    if (localStatus === 'approved') {
+      setStudent({ ...current, status: 'approved' });
+      setLoading(false);
+      // 异步验证
+      checkStudentStatus(current.id).then(status => {
+        if (status === 'rejected') {
+          studentApi.logout();
+          localStorage.removeItem(STATUS_KEY);
+          setStudent(null);
+        }
+      }).catch(() => {});
+      return;
+    }
+
+    // pending 或无状态 → 显示 pending，异步检查
+    setStudent({ ...current, status: 'pending' });
     setLoading(false);
 
-    // 异步检查云端最新状态
     checkStudentStatus(current.id).then(status => {
-      if (status === 'rejected') {
-        studentApi.logout();
-        setLocalStatus('rejected');
-        setStudent(null);
-      } else if (status === 'approved') {
-        setLocalStatus('approved');
+      if (status === 'approved') {
+        localStorage.setItem(STATUS_KEY, 'approved');
         setStudent({ ...current, status: 'approved' });
+      } else if (status === 'rejected') {
+        studentApi.logout();
+        localStorage.setItem(STATUS_KEY, 'rejected');
+        setStudent(null);
       } else if (status === 'pending') {
-        setLocalStatus('pending');
         setStudent({ ...current, status: 'pending' });
       }
-      // status === 'unknown' → 保持本地状态不变（不自动批准！）
+      // unknown → 保持 pending（不放行！）
     }).catch(() => {
-      // 网络错误 → 保持本地状态，不自动批准
+      // 网络错误 → 保持 pending（不放行！）
     });
   }, []);
 
   const login = async (name: string) => {
     const s = await studentApi.login(name);
-    // 先设为 pending（本地）
-    setLocalStatus('pending');
+    // 先设为 pending
+    localStorage.setItem(STATUS_KEY, 'pending');
     setStudent({ ...s, status: 'pending' });
 
-    // 异步注册到云端
     try {
       const status = await registerStudent(s.id, s.name);
       if (status === 'approved') {
-        // 老学生直接通过
-        setLocalStatus('approved');
+        localStorage.setItem(STATUS_KEY, 'approved');
         setStudent({ ...s, status: 'approved' });
-      } else {
-        // 新学生保持 pending
-        setLocalStatus('pending');
-        setStudent({ ...s, status: 'pending' });
       }
       return { status };
     } catch {
-      // 网络错误 → 保持 pending（不自动批准）
+      // 网络错误 → 保持 pending
       return { status: 'pending' as const };
     }
   };
@@ -100,14 +99,13 @@ export function StudentProvider({ children }: { children: ReactNode }) {
     try {
       const status = await checkStudentStatus(student.id);
       if (status === 'approved') {
-        setLocalStatus('approved');
+        localStorage.setItem(STATUS_KEY, 'approved');
         setStudent({ ...student, status: 'approved' });
       } else if (status === 'rejected') {
         studentApi.logout();
-        setLocalStatus('rejected');
+        localStorage.setItem(STATUS_KEY, 'rejected');
         setStudent(null);
       }
-      // pending 或 unknown → 保持当前状态
     } catch {
       // 网络错误 → 不变
     }

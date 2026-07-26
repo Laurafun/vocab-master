@@ -1,6 +1,6 @@
 /**
- * 数据上报模块 - 通过 GitHub API 把学生进度上报到私有仓库
- * 包含学生注册审核功能
+ * 数据上报模块 v2 - 通过 GitHub Issues API 作为简单数据库
+ * Issues API 对浏览器更友好，CORS 支持更好
  */
 
 // GitHub 配置
@@ -8,86 +8,35 @@ const GITHUB_TOKEN = atob('Z2hwX0xDZUZ0REJWU3dkNTJ2WExkOTRybjVzWVFnRjVnWTRXMU5WR
 const GITHUB_OWNER = 'Laurafun';
 const GITHUB_REPO = 'vocab-data';
 const API_BASE = 'https://api.github.com/repos/' + GITHUB_OWNER + '/' + GITHUB_REPO;
+const ISSUES_BASE = API_BASE + '/issues';
 
-// 上报间隔
-let lastReportTime = 0;
-const REPORT_INTERVAL = 30000;
-
-// 写入或更新文件
-async function writeToFile(path: string, content: string, sha?: string): Promise<boolean> {
+// 获取/创建标签
+async function ensureLabel(): Promise<void> {
   try {
-    const resp = await fetch(API_BASE + '/contents/' + path, {
-      method: 'PUT',
+    const resp = await fetch(API_BASE + '/labels', {
+      method: 'POST',
       headers: {
         'Authorization': 'token ' + GITHUB_TOKEN,
         'Accept': 'application/vnd.github.v3+json',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        message: 'Update ' + path,
-        content: btoa(unescape(encodeURIComponent(content))),
-        sha: sha,
-      }),
+      body: JSON.stringify({ name: 'student', color: '3b82f6', description: '学生注册' }),
     });
-    return resp.ok;
-  } catch (e) {
-    console.error('Report failed:', e);
-    return false;
-  }
-}
-
-// 读取文件
-async function readFromFile(path: string): Promise<{ content: string; sha: string } | null> {
-  try {
-    const resp = await fetch(API_BASE + '/contents/' + path, {
-      headers: {
-        'Authorization': 'token ' + GITHUB_TOKEN,
-        'Accept': 'application/vnd.github.v3+json',
-      },
-    });
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    const content = decodeURIComponent(escape(atob(data.content.replace(/\n/g, ''))));
-    return { content, sha: data.sha };
-  } catch {
-    return null;
-  }
-}
-
-// 列出目录下所有文件
-async function listFiles(path: string): Promise<string[]> {
-  try {
-    const resp = await fetch(API_BASE + '/contents/' + path, {
-      headers: {
-        'Authorization': 'token ' + GITHUB_TOKEN,
-        'Accept': 'application/vnd.github.v3+json',
-      },
-    });
-    if (!resp.ok) return [];
-    const data = await resp.json();
-    if (!Array.isArray(data)) return [];
-    return data.map((f: any) => f.name);
-  } catch {
-    return [];
-  }
+    // 标签已存在也没关系
+  } catch {}
 }
 
 // ============= 学生注册审核 =============
 
-// 学生首次登录 → 创建注册申请（状态 pending）
+// 学生首次登录 → 创建 Issue 作为注册申请
 export async function registerStudent(studentId: string, studentName: string): Promise<'pending' | 'approved' | 'rejected'> {
-  const filePath = 'students/' + studentId + '.json';
-  const existing = await readFromFile(filePath);
+  // 先检查是否已有记录
+  const existing = await checkStudentStatus(studentId);
+  if (existing !== 'unknown') return existing;
 
-  if (existing) {
-    try {
-      const data = JSON.parse(existing.content);
-      // 返回已有的状态（不自动批准）
-      return data.status || 'pending';
-    } catch {}
-  }
+  await ensureLabel();
 
-  // 新学生 → 创建待审核记录
+  // 创建 Issue
   const data = {
     studentId,
     name: studentName,
@@ -99,26 +48,63 @@ export async function registerStudent(studentId: string, studentName: string): P
     streak: 0,
   };
 
-  // 尝试写入，最多重试 3 次
-  let success = false;
-  for (let i = 0; i < 3; i++) {
-    success = await writeToFile(filePath, JSON.stringify(data, null, 2));
-    if (success) break;
-    await new Promise(r => setTimeout(r, 1000)); // 等 1 秒重试
+  try {
+    const resp = await fetch(ISSUES_BASE, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'token ' + GITHUB_TOKEN,
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        title: '[注册申请] ' + studentName,
+        body: '```json\n' + JSON.stringify(data, null, 2) + '\n```',
+        labels: ['student'],
+      }),
+    });
+
+    if (!resp.ok) {
+      console.error('Register failed:', resp.status, await resp.text());
+    }
+  } catch (e) {
+    console.error('Register error:', e);
   }
 
-  // 无论是否写入成功，都返回 pending（学生看到等待页面）
-  // 如果写入失败，下次打开会重试
   return 'pending';
 }
 
 // 查询学生审核状态
 export async function checkStudentStatus(studentId: string): Promise<'pending' | 'approved' | 'rejected' | 'unknown'> {
-  const result = await readFromFile('students/' + studentId + '.json');
-  if (!result) return 'unknown';
   try {
-    const data = JSON.parse(result.content);
-    return data.status || 'pending';
+    // 搜索所有 student 标签的 issue
+    const resp = await fetch(ISSUES_BASE + '?state=all&labels=student&per_page=100', {
+      headers: {
+        'Authorization': 'token ' + GITHUB_TOKEN,
+        'Accept': 'application/vnd.github.v3+json',
+      },
+    });
+    if (!resp.ok) return 'unknown';
+
+    const issues = await resp.json();
+    for (const issue of issues) {
+      try {
+        // 从 body 中提取 JSON
+        const match = issue.body?.match(/```json\n([\s\S]*?)\n```/);
+        if (!match) continue;
+        const data = JSON.parse(match[1]);
+        if (data.studentId === studentId) {
+          if (issue.state === 'closed') {
+            // 检查是否有 approved 或 rejected 标签
+            const labels = issue.labels?.map((l: any) => l.name) || [];
+            if (labels.includes('approved')) return 'approved';
+            if (labels.includes('rejected')) return 'rejected';
+            return 'unknown'; // 关闭但没有标签
+          }
+          return data.status || 'pending';
+        }
+      } catch {}
+    }
+    return 'unknown';
   } catch {
     return 'unknown';
   }
@@ -126,49 +112,110 @@ export async function checkStudentStatus(studentId: string): Promise<'pending' |
 
 // 老师批准学生
 export async function approveStudent(studentId: string): Promise<boolean> {
-  const filePath = 'students/' + studentId + '.json';
-  const existing = await readFromFile(filePath);
-  if (!existing) return false;
-
   try {
-    const data = JSON.parse(existing.content);
-    data.status = 'approved';
-    data.approvedAt = new Date().toISOString();
-    return await writeToFile(filePath, JSON.stringify(data, null, 2), existing.sha);
-  } catch {
+    const issue = await findIssueByStudentId(studentId);
+    if (!issue) return false;
+
+    // 更新 issue body 中的状态
+    const match = issue.body?.match(/```json\n([\s\S]*?)\n```/);
+    if (match) {
+      const data = JSON.parse(match[1]);
+      data.status = 'approved';
+      data.approvedAt = new Date().toISOString();
+
+      // 更新 issue
+      await fetch(ISSUES_BASE + '/' + issue.number, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': 'token ' + GITHUB_TOKEN,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: '[已批准] ' + data.name,
+          body: '```json\n' + JSON.stringify(data, null, 2) + '\n```',
+          state: 'closed',
+          labels: ['student', 'approved'],
+        }),
+      });
+    }
+    return true;
+  } catch (e) {
+    console.error('Approve error:', e);
     return false;
   }
 }
 
 // 老师拒绝学生
 export async function rejectStudent(studentId: string): Promise<boolean> {
-  const filePath = 'students/' + studentId + '.json';
-  const existing = await readFromFile(filePath);
-  if (!existing) return false;
-
   try {
-    const data = JSON.parse(existing.content);
-    data.status = 'rejected';
-    data.rejectedAt = new Date().toISOString();
-    return await writeToFile(filePath, JSON.stringify(data, null, 2), existing.sha);
-  } catch {
+    const issue = await findIssueByStudentId(studentId);
+    if (!issue) return false;
+
+    const match = issue.body?.match(/```json\n([\s\S]*?)\n```/);
+    if (match) {
+      const data = JSON.parse(match[1]);
+      data.status = 'rejected';
+      data.rejectedAt = new Date().toISOString();
+
+      await fetch(ISSUES_BASE + '/' + issue.number, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': 'token ' + GITHUB_TOKEN,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: '[已拒绝] ' + data.name,
+          body: '```json\n' + JSON.stringify(data, null, 2) + '\n```',
+          state: 'closed',
+          labels: ['student', 'rejected'],
+        }),
+      });
+    }
+    return true;
+  } catch (e) {
+    console.error('Reject error:', e);
     return false;
+  }
+}
+
+// 通过 studentId 查找 issue
+async function findIssueByStudentId(studentId: string): Promise<any | null> {
+  try {
+    const resp = await fetch(ISSUES_BASE + '?state=all&labels=student&per_page=100', {
+      headers: {
+        'Authorization': 'token ' + GITHUB_TOKEN,
+        'Accept': 'application/vnd.github.v3+json',
+      },
+    });
+    if (!resp.ok) return null;
+    const issues = await resp.json();
+    for (const issue of issues) {
+      try {
+        const match = issue.body?.match(/```json\n([\s\S]*?)\n```/);
+        if (!match) continue;
+        const data = JSON.parse(match[1]);
+        if (data.studentId === studentId) return issue;
+      } catch {}
+    }
+    return null;
+  } catch {
+    return null;
   }
 }
 
 // ============= 数据上报 =============
 
 export async function reportProgress(studentId: string, studentName: string, stats: any) {
-  const now = Date.now();
-  if (now - lastReportTime < REPORT_INTERVAL) return;
-  lastReportTime = now;
-
-  const filePath = 'students/' + studentId + '.json';
-  const existing = await readFromFile(filePath);
-  if (!existing) return; // 文件不存在则不上报
-
   try {
-    const data = JSON.parse(existing.content);
+    const issue = await findIssueByStudentId(studentId);
+    if (!issue) return;
+
+    const match = issue.body?.match(/```json\n([\s\S]*?)\n```/);
+    if (!match) return;
+    const data = JSON.parse(match[1]);
+
     // 只有已批准的学生才更新进度
     if (data.status !== 'approved') return;
 
@@ -181,30 +228,56 @@ export async function reportProgress(studentId: string, studentName: string, sta
     data.streak = stats.streak || 0;
     data.lastActive = new Date().toISOString();
 
-    await writeToFile(filePath, JSON.stringify(data, null, 2), existing.sha);
-  } catch {}
+    await fetch(ISSUES_BASE + '/' + issue.number, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': 'token ' + GITHUB_TOKEN,
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        body: '```json\n' + JSON.stringify(data, null, 2) + '\n```',
+      }),
+    });
+  } catch (e) {
+    console.error('Report error:', e);
+  }
 }
 
 // ============= 获取所有学生 =============
 
 export async function getAllStudents(): Promise<any[]> {
-  const files = await listFiles('students');
-  const students = [];
+  try {
+    const resp = await fetch(ISSUES_BASE + '?state=all&labels=student&per_page=100', {
+      headers: {
+        'Authorization': 'token ' + GITHUB_TOKEN,
+        'Accept': 'application/vnd.github.v3+json',
+      },
+    });
+    if (!resp.ok) return [];
 
-  for (const file of files) {
-    const result = await readFromFile('students/' + file);
-    if (result) {
+    const issues = await resp.json();
+    const students = [];
+
+    for (const issue of issues) {
       try {
-        students.push(JSON.parse(result.content));
+        const match = issue.body?.match(/```json\n([\s\S]*?)\n```/);
+        if (!match) continue;
+        const data = JSON.parse(match[1]);
+        students.push(data);
       } catch {}
     }
-  }
 
-  // 待审核排前面，然后按最后活跃时间排序
-  students.sort((a, b) => {
-    if (a.status === 'pending' && b.status !== 'pending') return -1;
-    if (a.status !== 'pending' && b.status === 'pending') return 1;
-    return (b.lastActive || '').localeCompare(a.lastActive || '');
-  });
-  return students;
+    // 待审核排前面
+    students.sort((a, b) => {
+      if (a.status === 'pending' && b.status !== 'pending') return -1;
+      if (a.status !== 'pending' && b.status === 'pending') return 1;
+      return (b.lastActive || '').localeCompare(a.lastActive || '');
+    });
+
+    return students;
+  } catch (e) {
+    console.error('Get students error:', e);
+    return [];
+  }
 }
