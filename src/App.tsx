@@ -52,8 +52,8 @@ function AppContent() {
     return <LoginPage />;
   }
 
-  // 待审核或被拒绝 → 显示登录页（里面会处理 pending/rejected 状态）
-  if (student.status === 'pending' || student.status === 'rejected') {
+  // 待审核 → 返回登录页（显示等待批准）
+  if (student.status === 'pending') {
     return <LoginPage />;
   }
 
