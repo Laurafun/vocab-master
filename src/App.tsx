@@ -47,6 +47,11 @@ function AppContent() {
     return <LoginPage />;
   }
 
+  // 待审核或被拒绝 → 显示登录页（里面会处理 pending/rejected 状态）
+  if (student.status === 'pending' || student.status === 'rejected') {
+    return <LoginPage />;
+  }
+
   if (isMobile) {
     return (
       <div className="flex h-screen w-screen flex-col" style={{ backgroundColor: 'var(--td-bg-color-page)' }}>

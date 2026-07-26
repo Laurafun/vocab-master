@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { getAllStudents } from '../lib/data-reporter';
-import { Users, TrendingUp, CheckCircle2, Clock, RefreshCw, ArrowLeft } from 'lucide-react';
+import { getAllStudents, approveStudent, rejectStudent } from '../lib/data-reporter';
+import { Users, TrendingUp, CheckCircle2, Clock, RefreshCw, ArrowLeft, UserCheck, UserX, Hourglass } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export function TeacherDashboard() {
@@ -89,13 +89,28 @@ export function TeacherDashboard() {
 
   // 统计
   const totalStudents = students.length;
-  const todayActive = students.filter(s => {
+  const pendingStudents = students.filter(s => s.status === 'pending');
+  const approvedStudents = students.filter(s => s.status === 'approved');
+  const rejectedStudents = students.filter(s => s.status === 'rejected');
+  const todayActive = approvedStudents.filter(s => {
     const last = new Date(s.lastActive);
     const today = new Date(); today.setHours(0, 0, 0, 0);
     return last >= today;
   }).length;
-  const totalMastered = students.reduce((sum, s) => sum + (s.mastered || 0), 0);
-  const totalReviews = students.reduce((sum, s) => sum + (s.todayStats?.total || 0), 0);
+  const totalMastered = approvedStudents.reduce((sum, s) => sum + (s.mastered || 0), 0);
+  const totalReviews = approvedStudents.reduce((sum, s) => sum + (s.todayStats?.total || 0), 0);
+
+  const handleApprove = async (studentId: string) => {
+    await approveStudent(studentId);
+    fetchData();
+  };
+
+  const handleReject = async (studentId: string) => {
+    if (confirm('确定要拒绝这个学生吗？')) {
+      await rejectStudent(studentId);
+      fetchData();
+    }
+  };
 
   return (
     <div className="h-full overflow-y-auto" style={{ backgroundColor: '#f8fafc' }}>
@@ -122,10 +137,40 @@ export function TeacherDashboard() {
         {/* 统计卡片 */}
         <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
           <StatCard icon={<Users size={20} />} label="学生总数" value={totalStudents} color="#3b82f6" />
+          <StatCard icon={<Hourglass size={20} />} label="待审核" value={pendingStudents.length} color="#f59e0b" />
           <StatCard icon={<Clock size={20} />} label="今日活跃" value={todayActive} color="#10b981" />
-          <StatCard icon={<CheckCircle2 size={20} />} label="已掌握单词" value={totalMastered} color="#f59e0b" />
-          <StatCard icon={<TrendingUp size={20} />} label="今日复习次数" value={totalReviews} color="#8b5cf6" />
+          <StatCard icon={<CheckCircle2 size={20} />} label="已掌握单词" value={totalMastered} color="#8b5cf6" />
         </div>
+
+        {/* 待审核区域 */}
+        {pendingStudents.length > 0 && (
+          <div className="mb-6 rounded-xl border-2 border-orange-200 bg-orange-50 p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <Hourglass size={18} color="#f59e0b" />
+              <h2 className="text-base font-semibold text-orange-900">待审核学生（{pendingStudents.length}）</h2>
+            </div>
+            <div className="space-y-2">
+              {pendingStudents.map((s, i) => (
+                <div key={i} className="flex items-center justify-between rounded-lg bg-white px-4 py-3 shadow-sm">
+                  <div>
+                    <span className="text-sm font-medium text-gray-900">{s.name}</span>
+                    <span className="ml-2 text-xs text-gray-400">{new Date(s.createdAt).toLocaleString('zh-CN')}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => handleApprove(s.studentId)}
+                      className="flex items-center gap-1 rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-600">
+                      <UserCheck size={14} /> 批准
+                    </button>
+                    <button onClick={() => handleReject(s.studentId)}
+                      className="flex items-center gap-1 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600">
+                      <UserX size={14} /> 拒绝
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* 学生列表 */}
         <div className="rounded-xl bg-white shadow-sm">
@@ -155,7 +200,7 @@ export function TeacherDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {students.map((s, i) => {
+                  {students.filter(s => s.status !== 'rejected').map((s, i) => {
                     const isActive = (() => {
                       const last = new Date(s.lastActive);
                       const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -165,8 +210,9 @@ export function TeacherDashboard() {
                       <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
                         <td className="px-6 py-3">
                           <div className="flex items-center gap-2">
-                            <span className={`h-2 w-2 rounded-full ${isActive ? 'bg-green-500' : 'bg-gray-300'}`} />
+                            <span className={`h-2 w-2 rounded-full ${s.status === 'pending' ? 'bg-orange-400' : isActive ? 'bg-green-500' : 'bg-gray-300'}`} />
                             <span className="text-sm font-medium text-gray-900">{s.name}</span>
+                            {s.status === 'pending' && <span className="text-xs text-orange-500 bg-orange-50 px-2 py-0.5 rounded">待审核</span>}
                           </div>
                         </td>
                         <td className="px-6 py-3 text-center text-sm text-gray-600">{(s.newWords || 0) + (s.learning || 0) + (s.mastered || 0)}</td>

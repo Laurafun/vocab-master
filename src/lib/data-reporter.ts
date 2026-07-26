@@ -1,6 +1,6 @@
 /**
  * 数据上报模块 - 通过 GitHub API 把学生进度上报到私有仓库
- * 老师 can 在后台查看所有学生数据
+ * 包含学生注册审核功能
  */
 
 // GitHub 配置
@@ -9,11 +9,11 @@ const GITHUB_OWNER = 'Laurafun';
 const GITHUB_REPO = 'vocab-data';
 const API_BASE = 'https://api.github.com/repos/' + GITHUB_OWNER + '/' + GITHUB_REPO;
 
-// 上报间隔（避免频繁请求）
+// 上报间隔
 let lastReportTime = 0;
-const REPORT_INTERVAL = 30000; // 30 秒最多上报一次
+const REPORT_INTERVAL = 30000;
 
-// 写入或更新文件到 GitHub
+// 写入或更新文件
 async function writeToFile(path: string, content: string, sha?: string): Promise<boolean> {
   try {
     const resp = await fetch(API_BASE + '/contents/' + path, {
@@ -72,35 +72,111 @@ async function listFiles(path: string): Promise<string[]> {
   }
 }
 
-// 上报学生进度
-export async function reportProgress(studentId: string, studentName: string, stats: any) {
-  const now = Date.now();
-  if (now - lastReportTime < REPORT_INTERVAL) return; // 限流
-  lastReportTime = now;
+// ============= 学生注册审核 =============
 
-  const fileName = studentId + '.json';
-  const filePath = 'students/' + fileName;
-
-  // 先获取现有文件（获取 sha）
+// 学生首次登录 → 创建注册申请（状态 pending）
+export async function registerStudent(studentId: string, studentName: string): Promise<'pending' | 'approved' | 'rejected'> {
+  const filePath = 'students/' + studentId + '.json';
   const existing = await readFromFile(filePath);
 
+  if (existing) {
+    try {
+      const data = JSON.parse(existing.content);
+      return data.status || 'approved'; // 老学生默认通过
+    } catch {}
+  }
+
+  // 新学生 → 创建待审核记录
   const data = {
     studentId,
     name: studentName,
-    totalWords: stats.total || 0,
-    newWords: stats.newWords || 0,
-    learning: stats.learning || 0,
-    mastered: stats.mastered || 0,
-    dueToday: stats.dueToday || 0,
-    todayStats: stats.todayStats || { total: 0, correct: 0, wrong: 0 },
-    streak: stats.streak || 0,
+    status: 'pending',
+    createdAt: new Date().toISOString(),
     lastActive: new Date().toISOString(),
+    totalWords: 0, newWords: 0, learning: 0, mastered: 0, dueToday: 0,
+    todayStats: { total: 0, correct: 0, wrong: 0 },
+    streak: 0,
   };
 
-  await writeToFile(filePath, JSON.stringify(data, null, 2), existing?.sha);
+  await writeToFile(filePath, JSON.stringify(data, null, 2));
+  return 'pending';
 }
 
-// 获取所有学生数据（老师后台用）
+// 查询学生审核状态
+export async function checkStudentStatus(studentId: string): Promise<'pending' | 'approved' | 'rejected' | 'unknown'> {
+  const result = await readFromFile('students/' + studentId + '.json');
+  if (!result) return 'unknown';
+  try {
+    const data = JSON.parse(result.content);
+    return data.status || 'approved';
+  } catch {
+    return 'unknown';
+  }
+}
+
+// 老师批准学生
+export async function approveStudent(studentId: string): Promise<boolean> {
+  const filePath = 'students/' + studentId + '.json';
+  const existing = await readFromFile(filePath);
+  if (!existing) return false;
+
+  try {
+    const data = JSON.parse(existing.content);
+    data.status = 'approved';
+    data.approvedAt = new Date().toISOString();
+    return await writeToFile(filePath, JSON.stringify(data, null, 2), existing.sha);
+  } catch {
+    return false;
+  }
+}
+
+// 老师拒绝学生
+export async function rejectStudent(studentId: string): Promise<boolean> {
+  const filePath = 'students/' + studentId + '.json';
+  const existing = await readFromFile(filePath);
+  if (!existing) return false;
+
+  try {
+    const data = JSON.parse(existing.content);
+    data.status = 'rejected';
+    data.rejectedAt = new Date().toISOString();
+    return await writeToFile(filePath, JSON.stringify(data, null, 2), existing.sha);
+  } catch {
+    return false;
+  }
+}
+
+// ============= 数据上报 =============
+
+export async function reportProgress(studentId: string, studentName: string, stats: any) {
+  const now = Date.now();
+  if (now - lastReportTime < REPORT_INTERVAL) return;
+  lastReportTime = now;
+
+  const filePath = 'students/' + studentId + '.json';
+  const existing = await readFromFile(filePath);
+  if (!existing) return; // 文件不存在则不上报
+
+  try {
+    const data = JSON.parse(existing.content);
+    // 只有已批准的学生才更新进度
+    if (data.status !== 'approved') return;
+
+    data.totalWords = stats.total || 0;
+    data.newWords = stats.newWords || 0;
+    data.learning = stats.learning || 0;
+    data.mastered = stats.mastered || 0;
+    data.dueToday = stats.dueToday || 0;
+    data.todayStats = stats.todayStats || { total: 0, correct: 0, wrong: 0 };
+    data.streak = stats.streak || 0;
+    data.lastActive = new Date().toISOString();
+
+    await writeToFile(filePath, JSON.stringify(data, null, 2), existing.sha);
+  } catch {}
+}
+
+// ============= 获取所有学生 =============
+
 export async function getAllStudents(): Promise<any[]> {
   const files = await listFiles('students');
   const students = [];
@@ -114,7 +190,11 @@ export async function getAllStudents(): Promise<any[]> {
     }
   }
 
-  // 按最后活跃时间排序
-  students.sort((a, b) => (b.lastActive || '').localeCompare(a.lastActive || ''));
+  // 待审核排前面，然后按最后活跃时间排序
+  students.sort((a, b) => {
+    if (a.status === 'pending' && b.status !== 'pending') return -1;
+    if (a.status !== 'pending' && b.status === 'pending') return 1;
+    return (b.lastActive || '').localeCompare(a.lastActive || '');
+  });
   return students;
 }
